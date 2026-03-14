@@ -386,10 +386,8 @@ self.addEventListener('fetch', e => {
       </div>
     </div>
 
-    <div class="card" style="text-align:center;background:linear-gradient(135deg,var(--sur),var(--s2))">
-      <div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--cream);margin-bottom:6px">¿Listo para dejar de improvisar?</div>
-      <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.5">En 2 minutos tendrás una rutina clara,<br>ordenada y adaptada a tu caso.</div>
-      <button class="btn-pri" onclick="startQuiz()">Crear mi rutina personalizada →</button>
+    <div class="card" id="welcomeCtaCard" style="text-align:center;background:linear-gradient(135deg,var(--sur),var(--s2))">
+      <!-- content injected by renderWelcomeCTA() -->
     </div>
 
   </div>
@@ -489,7 +487,7 @@ self.addEventListener('fetch', e => {
   <div class="card" style="text-align:center;background:linear-gradient(135deg,var(--sur),var(--s2))">
     <div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--cream);margin-bottom:6px">Registra tu progreso</div>
     <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.5">Usa el <b style="color:var(--cream)">Tracker de Caída (Bono 2)</b> para confirmar qué hábitos de esta rutina están bajando realmente tu caída.</div>
-    <button class="btn-sec" onclick="restartQuiz()">Crear una nueva rutina</button>
+    <button class="btn-sec" onclick="confirmNewRoutine()">🔄 Crear nueva rutina (reinicia los 7 días)</button>
   </div>
 
 </div><!-- /sc-result -->
@@ -606,6 +604,40 @@ function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   window.scrollTo({top:0,behavior:'smooth'});
+  if(id==='sc-welcome') renderWelcomeCTA();
+}
+
+function renderWelcomeCTA(){
+  const card = document.getElementById('welcomeCtaCard');
+  if(!card) return;
+  const saved = loadSavedRoutine();
+
+  if(saved){
+    const days = getDaysRemaining();
+    card.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;background:var(--gdm);border:1px solid rgba(58,138,80,0.35);border-radius:var(--rsm);padding:12px 14px;margin-bottom:14px;text-align:left">
+        <span style="font-size:20px;flex-shrink:0">✅</span>
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--glt2);margin-bottom:2px">Tienes una rutina activa esta semana</div>
+          <div style="font-size:11px;color:var(--txt2);line-height:1.4">Se reinicia automáticamente en <b style="color:var(--cream)">${days} día${days!==1?'s':''}</b>. Tus datos están guardados.</div>
+        </div>
+      </div>
+      <button class="btn-pri" onclick="continueRoutine()" style="margin-bottom:10px">
+        📋 Continuar mi rutina actual →
+      </button>
+      <div style="font-size:11px;color:var(--txt2);margin-bottom:10px">— o —</div>
+      <button class="btn-sec" onclick="confirmNewRoutine()">
+        🔄 Crear nueva rutina (reinicia los 7 días)
+      </button>`;
+  } else {
+    card.innerHTML = `
+      <div style="font-family:'DM Serif Display',serif;font-size:18px;color:var(--cream);margin-bottom:6px">¿Listo para dejar de improvisar?</div>
+      <div style="font-size:12px;color:var(--txt2);margin-bottom:14px;line-height:1.5">
+        En 2 minutos tendrás una rutina clara, ordenada y adaptada a tu caso.<br>
+        <span style="color:var(--gold);font-weight:500">Válida por 7 días</span> — se reinicia automáticamente cada semana.
+      </div>
+      <button class="btn-pri" onclick="startQuiz()">Crear mi rutina personalizada →</button>`;
+  }
 }
 
 function startQuiz(){
@@ -899,13 +931,80 @@ function buildResult(){
   });
 
   showScreen('sc-result');
+  saveRoutine();
+}
+
+// ── SAVE / LOAD ROUTINE ──────────────────────────────────────
+const ROUTINE_KEY = 'ft_rutina_v1';
+
+function saveRoutine(){
+  const saved = {
+    answers: answers,
+    savedAt: Date.now(),
+    weekStart: getWeekStart(),
+  };
+  localStorage.setItem(ROUTINE_KEY, JSON.stringify(saved));
+}
+
+function getWeekStart(){
+  const d = new Date();
+  const day = d.getDay(); // 0=Sun
+  const diff = d.getDate() - day + (day===0?-6:1); // Monday
+  const mon = new Date(d.setDate(diff));
+  return mon.toISOString().split('T')[0];
+}
+
+function loadSavedRoutine(){
+  try{
+    const raw = localStorage.getItem(ROUTINE_KEY);
+    if(!raw) return null;
+    const data = JSON.parse(raw);
+    // Check if same week
+    if(data.weekStart === getWeekStart()) return data;
+    // Different week — auto delete
+    localStorage.removeItem(ROUTINE_KEY);
+    return null;
+  } catch(e){ return null; }
+}
+
+function hasSavedRoutine(){
+  return loadSavedRoutine() !== null;
+}
+
+function continueRoutine(){
+  const saved = loadSavedRoutine();
+  if(!saved) return;
+  answers = saved.answers;
+  buildResult();
+}
+
+function getDaysRemaining(){
+  // Days until next Monday
+  const now = new Date();
+  const day = now.getDay();
+  const daysUntilMon = day===0 ? 1 : 8-day;
+  return daysUntilMon;
 }
 
 // ══════════════════════════════════════════════
 // UTILS
 // ══════════════════════════════════════════════
 
+function confirmNewRoutine(){
+  // Show confirm dialog
+  const ok = confirm('¿Seguro que quieres crear una nueva rutina?\n\nEsto borrará tu rutina actual y reiniciará el contador de 7 días.');
+  if(ok){
+    localStorage.removeItem(ROUTINE_KEY);
+    answers = {};
+    currQ = 0;
+    document.getElementById('progWrap').style.display='block';
+    showScreen('sc-question');
+    renderQ();
+  }
+}
+
 function restartQuiz(){
+  localStorage.removeItem(ROUTINE_KEY);
   document.getElementById('progWrap').style.display='none';
   showScreen('sc-welcome');
   // Reset loading screen
@@ -921,6 +1020,9 @@ function showToast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'),2500);
 }
+
+// Init on load
+renderWelcomeCTA();
 </script>
 </body>
 </html>
