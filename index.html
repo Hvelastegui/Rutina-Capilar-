@@ -641,7 +641,7 @@ function renderWelcomeCTA(){
 }
 
 function startQuiz(){
-  currQ=0; answers={};
+  currQ=0; answers={}; checkedItems=new Set();
   document.getElementById('progWrap').style.display='block';
   showScreen('sc-question');
   renderQ();
@@ -926,11 +926,17 @@ function buildResult(){
       if(checkedItems.has(i)){checkedItems.delete(i);document.getElementById('chk-'+i).classList.remove('done');document.getElementById('chkl-'+i).classList.remove('done');}
       else{checkedItems.add(i);document.getElementById('chk-'+i).classList.add('done');document.getElementById('chkl-'+i).classList.add('done');}
       document.getElementById('checkCount').textContent=checkedItems.size;
+      saveChecklist(); // Save checklist state on every change
     };
     chkEl.appendChild(el);
   });
 
   showScreen('sc-result');
+  // Restore saved checklist state if continuing existing routine
+  const savedData = loadSavedRoutine();
+  if(savedData && savedData.checklist && savedData.checklist.length){
+    restoreChecklist(savedData.checklist);
+  }
   saveRoutine();
 }
 
@@ -942,8 +948,19 @@ function saveRoutine(){
     answers: answers,
     savedAt: Date.now(),
     weekStart: getWeekStart(),
+    checklist: Array.from(checkedItems),
   };
   localStorage.setItem(ROUTINE_KEY, JSON.stringify(saved));
+}
+
+function saveChecklist(){
+  const raw = localStorage.getItem(ROUTINE_KEY);
+  if(!raw) return;
+  try{
+    const saved = JSON.parse(raw);
+    saved.checklist = Array.from(checkedItems);
+    localStorage.setItem(ROUTINE_KEY, JSON.stringify(saved));
+  }catch(e){}
 }
 
 function getWeekStart(){
@@ -965,6 +982,20 @@ function loadSavedRoutine(){
     localStorage.removeItem(ROUTINE_KEY);
     return null;
   } catch(e){ return null; }
+}
+
+function restoreChecklist(savedChecklist){
+  if(!savedChecklist || !savedChecklist.length) return;
+  checkedItems = new Set(savedChecklist);
+  // Apply visual state to all checklist items
+  savedChecklist.forEach(i=>{
+    const box = document.getElementById('chk-'+i);
+    const lbl = document.getElementById('chkl-'+i);
+    if(box) box.classList.add('done');
+    if(lbl) lbl.classList.add('done');
+  });
+  // Update counter
+  document.getElementById('checkCount').textContent = checkedItems.size;
 }
 
 function hasSavedRoutine(){
@@ -997,6 +1028,7 @@ function confirmNewRoutine(){
     localStorage.removeItem(ROUTINE_KEY);
     answers = {};
     currQ = 0;
+    checkedItems = new Set();
     document.getElementById('progWrap').style.display='block';
     showScreen('sc-question');
     renderQ();
